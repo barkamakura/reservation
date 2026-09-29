@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Bar KAMAKURA 予約</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#14100a">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  html,body { background:#14100a; color:#e8dcc0; font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif; }
+  body { padding: calc(14px + env(safe-area-inset-top)) 14px 40px; }
+  h1 { font-size:19px; color:#d4af6c; margin-bottom:4px; display:flex; align-items:center; gap:8px; }
+  .ver-badge { display:inline-block; padding:2px 8px; border-radius:99px; background:rgba(212,175,108,0.15); color:#cbb98a; font-size:11px; font-weight:700; }
+  .sub { font-size:12px; color:#a3987c; margin-bottom:14px; }
+
+  #load-alert, #save-alert {
+    display:none; padding:10px 12px; border-radius:10px; margin-bottom:12px; font-size:13px; font-weight:600;
+  }
+  #load-alert.show, #save-alert.show { display:block; }
+  #load-alert { background:rgba(224,119,111,0.18); color:#e0776f; }
+  #save-alert { background:rgba(212,175,108,0.18); color:#d4af6c; }
+  #save-alert button { margin-left:8px; background:#d4af6c; color:#14100a; border:none; border-radius:8px; padding:4px 10px; font-weight:700; font-size:12px; }
+
+  .tabs { display:flex; gap:8px; margin-bottom:14px; }
+  .tabs button {
+    flex:1; padding:11px 4px; border-radius:12px; border:1px solid rgba(212,175,108,0.3);
+    background:rgba(212,175,108,0.06); color:#cbb98a; font-size:14px; font-weight:700;
+  }
+  .tabs button.active { background:#d4af6c; color:#14100a; border-color:#d4af6c; }
+
+  /* ---- 暗証番号ロック ---- */
+  #lock {
+    position: fixed; inset: 0; z-index: 200; background: #14100a;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px; gap: 18px;
+  }
+  #lock.hidden { display: none; }
+  #lock img { width: 92px; height: 92px; border-radius: 21px; }
+  .lock-title { font-size: 14px; font-weight: 600; color: #cbb98a; }
+  .dots { display: flex; gap: 14px; height: 16px; }
+  .dots span { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #d4af6c; }
+  .dots span.on { background: #d4af6c; }
+  .dots.shake { animation: shake .4s; }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-9px); }
+    75% { transform: translateX(9px); }
+  }
+  .pad { display: grid; grid-template-columns: repeat(3, 74px); gap: 14px; }
+  .pad button {
+    height: 74px; border-radius: 50%; border: 1px solid rgba(212,175,108,0.3);
+    font-size: 26px; font-weight: 500; background: rgba(212,175,108,0.08); color: #e8dcc0;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+    font-family: inherit;
+  }
+  .pad button:active { background: rgba(212,175,108,0.25); }
+  .pad button.wide { border-radius: 22px; font-size: 15px; background: transparent; border-color: transparent; color:#cbb98a; }
+  .lock-msg { font-size: 13px; color: #e0776f; height: 18px; font-weight: 600; }
+
+  .add-btn {
+    width:100%; padding:14px; border-radius:14px; border:none; background:#d4af6c; color:#14100a;
+    font-size:16px; font-weight:800; margin-bottom:16px;
+  }
+
+  .card {
+    background:#1f1912; border:1px solid rgba(212,175,108,0.18); border-radius:14px;
+    padding:14px; margin-bottom:10px;
+  }
+  .card.cancelled { opacity:.55; }
+  .card-top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+  .card-name { font-size:17px; font-weight:800; color:#f0e6cc; }
+  .card.cancelled .card-name { text-decoration: line-through; }
+  .card-badge { font-size:11px; font-weight:700; padding:2px 8px; border-radius:99px; white-space:nowrap; }
+  .card-badge.today { background:rgba(212,175,108,0.25); color:#d4af6c; }
+  .card-badge.cancelled { background:rgba(224,119,111,0.2); color:#e0776f; }
+  .card-meta { margin-top:6px; font-size:14px; color:#cbb98a; line-height:1.9; }
+  .card-meta b { color:#e8dcc0; }
+  .card-note { margin-top:4px; font-size:13px; color:#a3987c; }
+  .card-actions { display:flex; gap:8px; margin-top:12px; }
+  .card-actions button {
+    flex:1; padding:9px 4px; border-radius:10px; border:1px solid rgba(212,175,108,0.3);
+    background:transparent; color:#cbb98a; font-size:13px; font-weight:700;
+  }
+  .card-actions button.danger { color:#e0776f; border-color:rgba(224,119,111,0.4); }
+  .card-actions button.ghost2 { color:#7fbf8f; border-color:rgba(127,191,143,0.4); }
+
+  .empty { text-align:center; color:#7a7160; font-size:14px; padding:40px 0; }
+
+  /* ---- モーダル ---- */
+  #modal-wrap { position:fixed; inset:0; z-index:300; display:none; }
+  #modal-wrap.show { display:block; }
+  #modal-bg { position:absolute; inset:0; background:rgba(0,0,0,0.6); }
+  #modal { position:absolute; left:0; right:0; bottom:0; max-height:88vh; overflow-y:auto;
+    background:#1f1912; border-radius:20px 20px 0 0; padding:20px 18px calc(24px + env(safe-area-inset-bottom));
+    border-top:1px solid rgba(212,175,108,0.25); }
+  #modal h2 { font-size:17px; color:#d4af6c; margin-bottom:16px; }
+  .field { margin-bottom:14px; }
+  .field label { display:block; font-size:13px; color:#cbb98a; margin-bottom:6px; font-weight:700; }
+  .field input, .field textarea {
+    width:100%; padding:12px 12px; border-radius:10px; border:1px solid rgba(212,175,108,0.3);
+    background:#14100a; color:#f0e6cc; font-size:16px; font-family:inherit;
+  }
+  .field textarea { resize:vertical; min-height:54px; }
+  .row2 { display:flex; gap:10px; }
+  .row2 .field { flex:1; }
+  .modal-actions { display:flex; gap:10px; margin-top:6px; }
+  .modal-actions button { flex:1; padding:13px; border-radius:12px; font-size:15px; font-weight:800; border:none; }
+  .btn-cancel { background:transparent; color:#cbb98a; border:1px solid rgba(212,175,108,0.3) !important; }
+  .btn-save { background:#d4af6c; color:#14100a; }
+  .btn-save:disabled { opacity:.4; }
+  .err { color:#e0776f; font-size:13px; margin-top:-6px; margin-bottom:10px; min-height:16px; }
+
+  #toast {
+    position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px);
+    background:#d4af6c; color:#14100a; padding:10px 18px; border-radius:99px; font-weight:700; font-size:14px;
+    opacity:0; pointer-events:none; transition:.25s;
+  }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div id="lock">
+  <img src="icon-192.png" alt="Bar KAMAKURA">
+  <div class="lock-title">暗証番号を入力してください</div>
+  <div class="dots" id="dots"><span></span><span></span><span></span><span></span></div>
+  <div class="lock-msg" id="lock-msg"></div>
+  <div class="pad" id="pad">
+    <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+    <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+    <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+    <span></span><button data-k="0">0</button><button class="wide" data-k="del">消す</button>
+  </div>
+</div>
+<script>
+// ---- 暗証番号ロック(このアプリ単体で完結。まとめアプリと同じ番号) ----
+const PIN_HASH = "a67ae99df04ecbdbbd885e266be5c7ffaba85d003ca5b9c9e7ac1c5699acb1ac";
+const UNLOCK_KEY = "bk_unlocked";
+let pinEntry = "";
+async function sha256(str) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+function paintDots() {
+  document.querySelectorAll("#dots span").forEach((s, i) => s.classList.toggle("on", i < pinEntry.length));
+}
+function unlockApp() {
+  try { localStorage.setItem(UNLOCK_KEY, "1"); } catch (e) {}
+  document.getElementById("lock").classList.add("hidden");
+}
+async function pressKey(k) {
+  const msg = document.getElementById("lock-msg");
+  if (k === "del") { pinEntry = pinEntry.slice(0, -1); msg.textContent = ""; paintDots(); return; }
+  if (pinEntry.length >= 4) return;
+  pinEntry += k;
+  paintDots();
+  if (pinEntry.length === 4) {
+    const ok = (await sha256(pinEntry)) === PIN_HASH;
+    if (ok) {
+      unlockApp();
+    } else {
+      const dots = document.getElementById("dots");
+      dots.classList.add("shake");
+      msg.textContent = "番号が違います";
+      setTimeout(() => { dots.classList.remove("shake"); pinEntry = ""; paintDots(); }, 420);
+    }
+  }
+}
+document.getElementById("pad").addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (b) pressKey(b.dataset.k);
+});
+try {
+  if (localStorage.getItem(UNLOCK_KEY) === "1") unlockApp();
+} catch (e) {}
+</script>
+
+<h1>Bar KAMAKURA 予約 <span class="ver-badge" id="ver-badge">v1</span></h1>
+<div class="sub">今日以降の予約は「予約一覧」、過ぎた日付は自動で「予約履歴」に入ります</div>
+
+<div id="load-alert"></div>
+<div id="save-alert"></div>
+
+<div class="tabs">
+  <button id="tab-upcoming" class="active">予約一覧</button>
+  <button id="tab-history">予約履歴</button>
+</div>
+
+<button class="add-btn" id="add-btn">＋ 新しい予約を追加</button>
+
+<div id="list"></div>
+
+<div id="modal-wrap">
+  <div id="modal-bg"></div>
+  <div id="modal"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ==================== Supabase 接続（bar-apps本体と同じ） ====================
+const SB_URL = "https://ygoenedypmqclgbcsgmo.supabase.co";
+const SB_KEY = "sb_publishable_0MKfDXkADPD2w7-Ewtz6MA_ineWsTMK";
+const SB_H = { apikey: SB_KEY, Authorization: "Bearer " + SB_KEY, "Content-Type": "application/json" };
+const APP_VER = "v1";
+document.getElementById("ver-badge").textContent = APP_VER;
+
+async function sbGet(path) {
+  const r = await fetch(`${SB_URL}/rest/v1/${path}`, { headers: SB_H, cache: "no-store" });
+  if (!r.ok) throw new Error("読み込み失敗 " + r.status + " " + (await r.text()).slice(0, 120));
+  return r.json();
+}
+async function sbUpsert(table, rows, conflict) {
+  if (!rows || !rows.length) return;
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?on_conflict=${conflict || "id"}`, {
+    method: "POST",
+    headers: { ...SB_H, Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify(rows)
+  });
+  if (!r.ok) throw new Error("書き込み失敗 " + r.status + " " + (await r.text()).slice(0, 120));
+}
+
+// 端末をまたいでぶつからないID（本体と同じ方式）
+const BK_DEVICE_NO = (() => {
+  try {
+    let d = localStorage.getItem("bk_device_no");
+    if (d === null) { d = String(Math.floor(Math.random() * 10)); localStorage.setItem("bk_device_no", d); }
+    return Number(d) % 10;
+  } catch (e) { return Math.floor(Math.random() * 10); }
+})();
+let _bkLastMs = 0, _bkSeq = 0;
+function newId() {
+  let t = Date.now();
+  if (t <= _bkLastMs) { _bkSeq++; if (_bkSeq >= 100) { _bkLastMs++; _bkSeq = 0; } }
+  else { _bkLastMs = t; _bkSeq = 0; }
+  return _bkLastMs * 1000 + BK_DEVICE_NO * 100 + _bkSeq;
+}
+
+// ---- 端末の控え（通信が切れても入力を止めないため） ----
+const BACKUP_KEY = "bk_reservations_backup_v1";
+function readBackup() { try { return JSON.parse(localStorage.getItem(BACKUP_KEY) || "[]"); } catch (e) { return []; } }
+function writeBackup(list) { try { localStorage.setItem(BACKUP_KEY, JSON.stringify(list)); } catch (e) {} }
+
+let reservations = [];   // 今わかっている全件（サーバー+端末控えをマージ済み）
+let hasBaseline = false; // 表示してよい状態か
+let curTab = "upcoming";
+let pendingSync = false;
+
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+}
+
+function newerRow(a, b) {
+  const ta = Date.parse(a.updated_at || a.created_at || 0) || 0;
+  const tb = Date.parse(b.updated_at || b.created_at || 0) || 0;
+  return tb >= ta ? b : a;
+}
+function mergeReservations(serverRows, localRows) {
+  const map = {};
+  (serverRows || []).forEach(r => map[r.id] = r);
+  (localRows || []).forEach(r => { map[r.id] = map[r.id] ? newerRow(map[r.id], r) : r; });
+  return Object.values(map);
+}
+
+async function loadData() {
+  const alertBox = document.getElementById("load-alert");
+  try {
+    const server = await sbGet("reservations?select=*&order=date.asc,time.asc");
+    reservations = mergeReservations(server, readBackup());
+    hasBaseline = true;
+    alertBox.classList.remove("show");
+    writeBackup(reservations);
+    if (pendingSync) trySync();
+  } catch (e) {
+    const local = readBackup();
+    if (local.length || reservations.length) {
+      // 端末の控えがあれば、それだけで表示は続ける
+      if (!reservations.length) reservations = local;
+      hasBaseline = true;
+    }
+    alertBox.textContent = "⚠️ サーバーに繋がりません（" + netWhy(e) + "）。この端末に保存されている分だけ表示しています。";
+    alertBox.classList.add("show");
+  }
+  render();
+}
+
+function netWhy(e) {
+  const m = String(e && e.message || e);
+  if (m.includes("Failed to fetch") || m.includes("NetworkError")) return "ネットにつながりません";
+  if (m.includes(" 429")) return "アクセスが集中しています";
+  if (m.includes(" 401") || m.includes(" 403")) return "データの鍵が合いません";
+  if (m.includes(" 500") || m.includes(" 503")) return "サーバー側の不調";
+  return m.slice(0, 60);
+}
+
+let saving = false;
+async function trySync() {
+  if (saving) return;
+  const dirty = reservations.filter(r => r._dirty);
+  if (!dirty.length) { pendingSync = false; updateSaveAlert(); return; }
+  saving = true;
+  try {
+    const rows = dirty.map(r => {
+      const { _dirty, ...rest } = r;
+      return rest;
+    });
+    await sbUpsert("reservations", rows, "id");
+    dirty.forEach(r => delete r._dirty);
+    writeBackup(reservations);
+    pendingSync = false;
+  } catch (e) {
+    pendingSync = true;
+  } finally {
+    saving = false;
+    updateSaveAlert();
+  }
+}
+function updateSaveAlert() {
+  const el = document.getElementById("save-alert");
+  if (pendingSync) {
+    el.innerHTML = "📶 まだサーバーに送れていません。この端末には保存されているので、そのまま操作を続けて大丈夫です。 <button onclick=\"trySync()\">今すぐ送る</button>";
+    el.classList.add("show");
+  } else {
+    el.classList.remove("show");
+  }
+}
+setInterval(() => { if (pendingSync) trySync(); }, 45000);
+window.addEventListener("online", trySync);
+
+function upsertLocal(row) {
+  row.updated_at = new Date().toISOString();
+  row._dirty = true;
+  const i = reservations.findIndex(r => String(r.id) === String(row.id));
+  if (i >= 0) reservations[i] = row; else reservations.push(row);
+  writeBackup(reservations);
+  render();
+  trySync();
+}
+
+// ==================== 表示 ====================
+function switchTab(name) {
+  curTab = name;
+  document.getElementById("tab-upcoming").classList.toggle("active", name === "upcoming");
+  document.getElementById("tab-history").classList.toggle("active", name === "history");
+  render();
+}
+document.getElementById("tab-upcoming").onclick = () => switchTab("upcoming");
+document.getElementById("tab-history").onclick = () => switchTab("history");
+
+function fmtDate(iso) {
+  if (!iso) return "";
+  const [y,m,d] = iso.split("-");
+  const wd = ["日","月","火","水","木","金","土"][new Date(iso+"T00:00:00").getDay()];
+  return `${Number(m)}/${Number(d)}(${wd})`;
+}
+
+function render() {
+  const list = document.getElementById("list");
+  if (!hasBaseline) { list.innerHTML = '<div class="empty">読み込み中…</div>'; return; }
+
+  const today = todayStr();
+  let rows = reservations.filter(r => curTab === "upcoming" ? r.date >= today : r.date < today);
+  rows.sort((a,b) => curTab === "upcoming"
+    ? (a.date + a.time).localeCompare(b.date + b.time)
+    : (b.date + b.time).localeCompare(a.date + a.time));
+
+  if (!rows.length) {
+    list.innerHTML = `<div class="empty">${curTab === "upcoming" ? "今のところ予約はありません" : "過去の予約履歴はまだありません"}</div>`;
+    return;
+  }
+
+  list.innerHTML = rows.map(r => {
+    const isToday = r.date === today && !r.cancelled;
+    return `
+    <div class="card ${r.cancelled ? "cancelled" : ""}">
+      <div class="card-top">
+        <div class="card-name">${escapeHtml(r.name || "(名前未入力)")}</div>
+        ${r.cancelled ? '<span class="card-badge cancelled">キャンセル済み</span>' : (isToday ? '<span class="card-badge today">本日</span>' : "")}
+      </div>
+      <div class="card-meta">
+        <b>${fmtDate(r.date)} ${r.time || ""}</b>　${r.count ? r.count + "名" : ""}
+        ${r.phone ? `<br>📞 ${escapeHtml(r.phone)}` : ""}
+      </div>
+      ${r.note ? `<div class="card-note">${escapeHtml(r.note)}</div>` : ""}
+      <div class="card-actions">
+        <button onclick="openEdit('${r.id}')">編集</button>
+        ${r.cancelled
+          ? `<button class="ghost2" onclick="setCancelled('${r.id}', false)">キャンセル解除</button>`
+          : `<button class="danger" onclick="confirmCancel('${r.id}')">キャンセル</button>`}
+      </div>
+    </div>`;
+  }).join("");
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+// ==================== 追加・編集モーダル ====================
+document.getElementById("add-btn").onclick = () => openEdit(null);
+
+function openEdit(id) {
+  const r = id ? reservations.find(x => String(x.id) === String(id)) : null;
+  const modal = document.getElementById("modal");
+  modal.innerHTML = `
+    <h2>${r ? "予約を編集" : "新しい予約"}</h2>
+    <div class="field"><label>お名前(必須)</label><input id="f-name" value="${r ? escapeHtml(r.name || "") : ""}" placeholder="例: 山田様"></div>
+    <div class="row2">
+      <div class="field"><label>日付(必須)</label><input id="f-date" type="date" value="${r ? r.date || "" : todayStr()}"></div>
+      <div class="field"><label>時間(必須)</label><input id="f-time" type="time" value="${r ? r.time || "" : ""}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>人数(必須)</label><input id="f-count" type="number" min="1" value="${r ? r.count || "" : ""}" placeholder="例: 4"></div>
+      <div class="field"><label>電話番号</label><input id="f-phone" type="tel" value="${r ? escapeHtml(r.phone || "") : ""}" placeholder="例: 090-1234-5678"></div>
+    </div>
+    <div class="field"><label>メモ(任意)</label><textarea id="f-note" placeholder="例: 誕生日のお客様・窓際希望など">${r ? escapeHtml(r.note || "") : ""}</textarea></div>
+    <div class="err" id="f-err"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">戻る</button>
+      <button class="btn-save" id="f-save">${r ? "保存する" : "この内容で登録"}</button>
+    </div>
+  `;
+  document.getElementById("modal-wrap").classList.add("show");
+  document.getElementById("f-save").onclick = () => saveEdit(id);
+}
+function closeModal() { document.getElementById("modal-wrap").classList.remove("show"); }
+document.getElementById("modal-bg").onclick = closeModal;
+
+function saveEdit(id) {
+  const name = document.getElementById("f-name").value.trim();
+  const date = document.getElementById("f-date").value;
+  const time = document.getElementById("f-time").value;
+  const count = document.getElementById("f-count").value;
+  const phone = document.getElementById("f-phone").value.trim();
+  const note = document.getElementById("f-note").value.trim();
+  const err = document.getElementById("f-err");
+
+  if (!name || !date || !time || !count) {
+    err.textContent = "お名前・日付・時間・人数は必須です";
+    return;
+  }
+  err.textContent = "";
+
+  const existing = id ? reservations.find(r => String(r.id) === String(id)) : null;
+  const row = existing ? { ...existing } : { id: newId(), created_at: new Date().toISOString(), cancelled: false };
+  row.name = name; row.date = date; row.time = time; row.count = Number(count); row.phone = phone; row.note = note;
+
+  upsertLocal(row);
+  closeModal();
+  showToast(existing ? "予約を更新しました" : "予約を登録しました");
+}
+
+function confirmCancel(id) {
+  if (!confirm("この予約をキャンセル済みにしますか？(記録は残ります)")) return;
+  setCancelled(id, true);
+}
+function setCancelled(id, val) {
+  const r = reservations.find(x => String(x.id) === String(id));
+  if (!r) return;
+  const row = { ...r, cancelled: val };
+  upsertLocal(row);
+  showToast(val ? "キャンセルにしました" : "キャンセルを解除しました");
+}
+
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 1600);
+}
+
+// ==================== 起動 ====================
+loadData();
+setInterval(() => { if (!document.getElementById("modal-wrap").classList.contains("show")) loadData(); }, 20000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) loadData(); });
+</script>
+</body>
+</html>
